@@ -2,6 +2,7 @@ import os
 import json
 import numpy as np
 import streamlit as st
+import gdown
 import faiss
 import assemblyai as aai
 import sqlite3
@@ -16,15 +17,11 @@ aai.settings.api_key = api_key
 st.write("✅ API Key Loaded Successfully!")
 
 # Google Drive File ID
-GDRIVE_FILE_ID = "1bKx176TVlxQbMEFuDyzSBmceLapQYHT8"  
+GDRIVE_FILE_ID = "1bKx176TVlxQbMEFuDyzSBmceLapQYHT8"
 
 # Function to Download DB from Google Drive
 def download_db_from_drive(file_id, output_path="eng_subtitles_database.db"):
-    url = f"https://drive.google.com/uc?id={file_id}"
-    response = requests.get(url, stream=True)
-    with open(output_path, "wb") as file:
-        for chunk in response.iter_content(chunk_size=8192):
-            file.write(chunk)
+    gdown.download(f"https://drive.google.com/uc?id={file_id}", output_path, quiet=False)
     return output_path
 
 # Check if DB file exists, if not, download it
@@ -34,29 +31,50 @@ if not os.path.exists(DB_PATH):
         DB_PATH = download_db_from_drive(GDRIVE_FILE_ID)
         st.success("✅ Database downloaded successfully!")
 
-# Load Subtitle Data
+def is_valid_sqlite(db_path):
+    """Check if a file is a valid SQLite database"""
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA integrity_check;")
+        result = cursor.fetchone()
+        conn.close()
+        return result[0] == "ok"
+    except sqlite3.DatabaseError:
+        return False
+
+if not is_valid_sqlite(DB_PATH):
+    st.error("⚠️ The downloaded file is not a valid SQLite database. Please check the Google Drive file.")
+    st.stop()
+
 def load_subtitles(db_path):
+    """Load subtitle data from SQLite database."""
     if not os.path.exists(db_path):
-        st.error("⚠️ Database file not found! Please upload the .db file.")
+        st.error("⚠️ Database file not found! Please upload the .db file or check the Google Drive download.")
         return None  # Stop execution
 
-    conn = sqlite3.connect(db_path)
     try:
+        conn = sqlite3.connect(db_path)
         df = pd.read_sql("SELECT num, name, content FROM zipfiles", conn)
+        conn.close()
     except Exception as e:
         st.error(f"⚠️ Error loading database: {e}")
-        df = None  # Return None on failure
-    finally:
-        conn.close()
+        return None  # Return None on failure
 
-    if df is not None:
-        # Convert binary content to text
+    # Convert binary content to text (if needed)
+    if "content" in df.columns:
         df["decoded_text"] = df["content"].apply(lambda x: x.decode("latin-1") if isinstance(x, bytes) else "")
 
     return df
 
-
+# Load the database
 df = load_subtitles(DB_PATH)
+
+# Validate if subtitles loaded successfully
+if df is None or df.empty:
+    st.error("⚠️ No subtitle data found! Please check the database file.")
+    st.stop()
+
 
 # Load Sentence Transformer Model
 model = SentenceTransformer("all-MiniLM-L6-v2")
