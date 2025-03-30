@@ -36,11 +36,25 @@ if not os.path.exists(DB_PATH):
 
 # Load Subtitle Data
 def load_subtitles(db_path):
+    if not os.path.exists(db_path):
+        st.error("⚠️ Database file not found! Please upload the .db file.")
+        return None  # Stop execution
+
     conn = sqlite3.connect(db_path)
-    df = pd.read_sql("SELECT num, name, content FROM zipfiles", conn)
-    conn.close()
-    df["decoded_text"] = df["content"].apply(lambda x: x.decode("latin-1") if isinstance(x, bytes) else "")
+    try:
+        df = pd.read_sql("SELECT num, name, content FROM zipfiles", conn)
+    except Exception as e:
+        st.error(f"⚠️ Error loading database: {e}")
+        df = None  # Return None on failure
+    finally:
+        conn.close()
+
+    if df is not None:
+        # Convert binary content to text
+        df["decoded_text"] = df["content"].apply(lambda x: x.decode("latin-1") if isinstance(x, bytes) else "")
+
     return df
+
 
 df = load_subtitles(DB_PATH)
 
