@@ -10,7 +10,8 @@ import requests
 from sentence_transformers import SentenceTransformer
 
 # Load AssemblyAI API Key from Streamlit Secrets
-aai.settings.api_key = st.secrets["db505a784a0d4dc093f0bee4121c1f82"]
+api_key = st.secrets["general"]["db505a784a0d4dc093f0bee4121c1f82"]
+aai.settings.api_key = api_key 
 
 # Google Drive File ID
 GDRIVE_FILE_ID = "1bKx176TVlxQbMEFuDyzSBmceLapQYHT8"  
