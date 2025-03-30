@@ -118,13 +118,3 @@ st.sidebar.markdown("""
 """)
 
 st.sidebar.write("📌 Built with ❤️ using **Streamlit** 🚀")
-
-# starts streamlit
-if __name__ == '__main__':
-    st.run()
-
-from pyngrok import ngrok
-
-public_url = ngrok.connect(port=8501)
-print("Streamlit App URL:", public_url)
-!Cloning Shazam App.py
