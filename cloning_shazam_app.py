@@ -35,54 +35,30 @@ DB_PATH = "eng_subtitles_database.db"
 if not os.path.exists(DB_PATH):
     with st.spinner("Downloading database from Google Drive..."):
         DB_PATH = download_db_from_drive(GDRIVE_FILE_ID)
+        st.success("✅ Database downloaded successfully!")
 
-# Validate if the file is an SQLite database
-def is_valid_sqlite(db_path):
-    """Check if the file is a valid SQLite database."""
-    try:
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
-        tables = cursor.fetchall()
-        conn.close()
-        return len(tables) > 0  # If tables exist, it's a valid DB
-    except sqlite3.DatabaseError:
-        return False
-
-if not is_valid_sqlite(DB_PATH):
-    st.error("⚠️ The downloaded file is not a valid SQLite database. Please check the Google Drive file.")
-    st.stop()
-
-st.success("✅ Database is valid and ready to use!")
-
+# Load Subtitle Data
 def load_subtitles(db_path):
-    """Load subtitle data from SQLite database."""
-    if not os.path.exists(db_path):
-        st.error("⚠️ Database file not found! Please upload the .db file or check the Google Drive download.")
-        return None  # Stop execution
-
+    """Loads the subtitle data from the SQLite database."""
     try:
         conn = sqlite3.connect(db_path)
         df = pd.read_sql("SELECT num, name, content FROM zipfiles", conn)
         conn.close()
+
+        # Convert binary content to text
+        df["decoded_text"] = df["content"].apply(lambda x: x.decode("latin-1") if isinstance(x, bytes) else "")
+        return df
+
     except Exception as e:
         st.error(f"⚠️ Error loading database: {e}")
-        return None  # Return None on failure
-
-    # Convert binary content to text (if needed)
-    if "content" in df.columns:
-        df["decoded_text"] = df["content"].apply(lambda x: x.decode("latin-1") if isinstance(x, bytes) else "")
-
-    return df
+        return None
 
 # Load the database
 df = load_subtitles(DB_PATH)
 
-# Validate if subtitles loaded successfully
-if df is None or df.empty:
-    st.error("⚠️ No subtitle data found! Please check the database file.")
-    st.stop()
-
+# Display success message
+if df is not None:
+    st.success(f"✅ Loaded {len(df)} subtitles successfully!")
 
 # Load Sentence Transformer Model
 model = SentenceTransformer("all-MiniLM-L6-v2")
