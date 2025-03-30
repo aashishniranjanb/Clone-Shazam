@@ -9,21 +9,18 @@ from sentence_transformers import SentenceTransformer
 import assemblyai as aai
 
 # -------------------------------
-# Load API Key from Streamlit Secrets
+# Load AssemblyAI API Key from Streamlit Secrets
 # -------------------------------
 aai.settings.api_key = st.secrets["general"]["ASSEMBLYAI_API_KEY"]
 
 # -------------------------------
-# Download Database from Google Drive using gdown with fuzzy matching
+# Download Database from Google Drive using gdown
 # -------------------------------
-# Google Drive File ID from the provided link:
-# https://drive.google.com/file/d/11lbGqk5BXKylBzjWtzYvw9F_FJTRjdhr/view?usp=sharing
 GDRIVE_FILE_ID = "11lbGqk5BXKylBzjWtzYvw9F_FJTRjdhr"
 
 def download_db_from_drive(file_id, output_path="eng_subtitles_database.db"):
     url = f"https://drive.google.com/uc?id={file_id}"
     st.write("Downloading database from:", url)
-    # Use fuzzy=True to handle redirections and warnings
     gdown.download(url, output_path, quiet=False, fuzzy=True)
     return output_path
 
@@ -33,19 +30,18 @@ if not os.path.exists(DB_PATH):
         DB_PATH = download_db_from_drive(GDRIVE_FILE_ID)
         st.success("✅ Database downloaded successfully!")
 
-# Debug info: print file existence and size
 st.write(f"File exists: {os.path.exists(DB_PATH)}")
 st.write(f"File size: {os.path.getsize(DB_PATH)} bytes")
 
 # -------------------------------
-# Load Subtitle Data from the SQLite Database
+# Load Subtitle Data from the SQLite Database (Cached)
 # -------------------------------
+@st.cache_data(show_spinner=True)
 def load_subtitles(db_path):
     try:
         conn = sqlite3.connect(db_path)
         df = pd.read_sql("SELECT num, name, content FROM zipfiles", conn)
         conn.close()
-        # Convert binary content to text using latin-1 decoding
         df["decoded_text"] = df["content"].apply(lambda x: x.decode("latin-1") if isinstance(x, bytes) else "")
         return df
     except Exception as e:
@@ -59,15 +55,23 @@ if df is None or df.empty:
 else:
     st.success(f"✅ Loaded {len(df)} subtitles successfully!")
 
+# Optional: Sample the data to improve speed during testing/development
+def sample_df(df, sample_rate=0.3):
+    return df.sample(frac=sample_rate, random_state=42)
+
+# Uncomment the line below to sample 30% of the data
+# df = sample_df(df, sample_rate=0.3)
+
 # -------------------------------
-# Create FAISS Index from Subtitle Embeddings
+# Create FAISS Index from Subtitle Embeddings (Cached)
 # -------------------------------
 model = SentenceTransformer("all-MiniLM-L6-v2")
 
+@st.cache_resource(show_spinner=True)
 def create_faiss_index(df):
     embeddings = model.encode(df["decoded_text"].tolist(), show_progress_bar=True)
     embeddings = np.array(embeddings)
-    d = embeddings.shape[1]  # Embedding dimension
+    d = embeddings.shape[1]
     index = faiss.IndexFlatL2(d)
     index.add(embeddings)
     return index, df
@@ -106,7 +110,10 @@ if uploaded_audio:
                 - **📜 Subtitle:** `{row["decoded_text"][:200]}...`
                 - 🔗 **[View on OpenSubtitles](https://www.opensubtitles.org/en/subtitles/{row["num"]})**
                 """)
-
+                
+# -------------------------------
+# Sidebar & Footer: Developer Information
+# -------------------------------
 st.sidebar.header("🔧 Settings")
 st.sidebar.markdown("""
 - **Database:** `SQLite (.db) file (downloaded from Google Drive)`
