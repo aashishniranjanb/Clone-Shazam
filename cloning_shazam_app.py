@@ -10,6 +10,7 @@ import requests
 from sentence_transformers import SentenceTransformer
 
 # Load AssemblyAI API Key from Streamlit Secrets
+st.write("Secrets:", st.secrets)
 api_key = st.secrets["general"]["db505a784a0d4dc093f0bee4121c1f82"]
 aai.settings.api_key = api_key 
 
