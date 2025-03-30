@@ -14,7 +14,7 @@ import assemblyai as aai
 aai.settings.api_key = st.secrets["general"]["ASSEMBLYAI_API_KEY"]
 
 # -------------------------------
-# Download Database from Google Drive using gdown
+# Download Database from Google Drive using gdown with fuzzy matching
 # -------------------------------
 # Google Drive File ID from the provided link:
 # https://drive.google.com/file/d/11lbGqk5BXKylBzjWtzYvw9F_FJTRjdhr/view?usp=sharing
@@ -23,7 +23,8 @@ GDRIVE_FILE_ID = "11lbGqk5BXKylBzjWtzYvw9F_FJTRjdhr"
 def download_db_from_drive(file_id, output_path="eng_subtitles_database.db"):
     url = f"https://drive.google.com/uc?id={file_id}"
     st.write("Downloading database from:", url)
-    gdown.download(url, output_path, quiet=False)
+    # Use fuzzy=True to handle redirections and warnings
+    gdown.download(url, output_path, quiet=False, fuzzy=True)
     return output_path
 
 DB_PATH = "eng_subtitles_database.db"
@@ -32,7 +33,7 @@ if not os.path.exists(DB_PATH):
         DB_PATH = download_db_from_drive(GDRIVE_FILE_ID)
         st.success("✅ Database downloaded successfully!")
 
-# Debug info
+# Debug info: print file existence and size
 st.write(f"File exists: {os.path.exists(DB_PATH)}")
 st.write(f"File size: {os.path.getsize(DB_PATH)} bytes")
 
@@ -53,7 +54,7 @@ def load_subtitles(db_path):
 
 df = load_subtitles(DB_PATH)
 if df is None or df.empty:
-    st.error("⚠️ Database could not be loaded. Please verify the Google Drive file.")
+    st.error("⚠️ Database could not be loaded. Please verify that the Google Drive file is a valid SQLite database with the correct structure.")
     st.stop()
 else:
     st.success(f"✅ Loaded {len(df)} subtitles successfully!")
@@ -61,7 +62,6 @@ else:
 # -------------------------------
 # Create FAISS Index from Subtitle Embeddings
 # -------------------------------
-# Load Sentence Transformer model
 model = SentenceTransformer("all-MiniLM-L6-v2")
 
 def create_faiss_index(df):
@@ -81,7 +81,6 @@ st.set_page_config(page_title="Shazam Clone: Audio-to-Subtitle Search", layout="
 st.title("🎵 Shazam Clone: Audio-to-Subtitle Search")
 st.markdown("Upload an **audio file**, transcribe it to text, and retrieve the most relevant subtitle segments!")
 
-# Audio file uploader
 uploaded_audio = st.file_uploader("🎤 Upload an Audio File", type=["mp3", "wav", "m4a"])
 
 if uploaded_audio:
@@ -94,7 +93,6 @@ if uploaded_audio:
             st.success("✅ Transcription Complete!")
             st.text_area("🎧 Transcribed Text", query_text, height=150)
             
-            # Search Subtitles Using FAISS
             def search_subtitles(query_text, index, df, top_k=5):
                 query_embedding = model.encode([query_text])
                 D, I = index.search(query_embedding, top_k)
@@ -108,10 +106,7 @@ if uploaded_audio:
                 - **📜 Subtitle:** `{row["decoded_text"][:200]}...`
                 - 🔗 **[View on OpenSubtitles](https://www.opensubtitles.org/en/subtitles/{row["num"]})**
                 """)
-                
-# -------------------------------
-# Sidebar: Developer Information
-# -------------------------------
+
 st.sidebar.header("🔧 Settings")
 st.sidebar.markdown("""
 - **Database:** `SQLite (.db) file (downloaded from Google Drive)`
@@ -119,6 +114,3 @@ st.sidebar.markdown("""
 """)
 st.markdown("---")
 st.markdown("**Developed by [Aashish Niranjan BarathyKannan](https://www.linkedin.com/in/aashishniranjanb/)** | [GitHub](https://github.com/aashishniranjanb)")
-
-
-
