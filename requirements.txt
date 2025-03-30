@@ -1,0 +1,7 @@
+streamlit
+faiss-cpu
+sentence-transformers
+assemblyai
+pydub
+python-dotenv
+pyngrok
