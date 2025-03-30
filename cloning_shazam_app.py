@@ -21,7 +21,13 @@ GDRIVE_FILE_ID = "1bKx176TVlxQbMEFuDyzSBmceLapQYHT8"
 
 # Function to Download DB from Google Drive
 def download_db_from_drive(file_id, output_path="eng_subtitles_database.db"):
-    gdown.download(f"https://drive.google.com/uc?id={file_id}", output_path, quiet=False)
+    url = f"https://drive.google.com/uc?id={file_id}"
+    response = requests.get(url, stream=True)
+
+    with open(output_path, "wb") as file:
+        for chunk in response.iter_content(chunk_size=8192):
+            file.write(chunk)
+
     return output_path
 
 # Check if DB file exists, if not, download it
@@ -29,23 +35,25 @@ DB_PATH = "eng_subtitles_database.db"
 if not os.path.exists(DB_PATH):
     with st.spinner("Downloading database from Google Drive..."):
         DB_PATH = download_db_from_drive(GDRIVE_FILE_ID)
-        st.success("✅ Database downloaded successfully!")
 
+# Validate if the file is an SQLite database
 def is_valid_sqlite(db_path):
-    """Check if a file is a valid SQLite database"""
+    """Check if the file is a valid SQLite database."""
     try:
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
-        cursor.execute("PRAGMA integrity_check;")
-        result = cursor.fetchone()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+        tables = cursor.fetchall()
         conn.close()
-        return result[0] == "ok"
+        return len(tables) > 0  # If tables exist, it's a valid DB
     except sqlite3.DatabaseError:
         return False
 
 if not is_valid_sqlite(DB_PATH):
     st.error("⚠️ The downloaded file is not a valid SQLite database. Please check the Google Drive file.")
     st.stop()
+
+st.success("✅ Database is valid and ready to use!")
 
 def load_subtitles(db_path):
     """Load subtitle data from SQLite database."""
