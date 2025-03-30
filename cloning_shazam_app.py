@@ -1,6 +1,3 @@
-# -*- coding: utf-8 -*-
-#pip install streamlit faiss-cpu assemblyai sentence-transformers pysqlite3-binary pandas numpy
-
 import os
 import json
 import numpy as np
@@ -8,103 +5,96 @@ import streamlit as st
 import faiss
 import assemblyai as aai
 import sqlite3
-from sentence_transformers import SentenceTransformer
 import pandas as pd
-import tempfile
+import requests
+from sentence_transformers import SentenceTransformer
 
-from google.colab import drive
-drive.mount('/content/drive')
+# Load AssemblyAI API Key from Streamlit Secrets
+aai.settings.api_key = st.secrets["db505a784a0d4dc093f0bee4121c1f82"]
 
-# Load AssemblyAI API key
-aai.settings.api_key = "db505a784a0d4dc093f0bee4121c1f82"
+# Google Drive File ID
+GDRIVE_FILE_ID = "1bKx176TVlxQbMEFuDyzSBmceLapQYHT8"  
 
-# Load Subtitle Database
-DB_PATH = "/content/drive/MyDrive/eng_subtitles_database.db"
+# Function to Download DB from Google Drive
+def download_db_from_drive(file_id, output_path="eng_subtitles_database.db"):
+    url = f"https://drive.google.com/uc?id={file_id}"
+    response = requests.get(url, stream=True)
+    with open(output_path, "wb") as file:
+        for chunk in response.iter_content(chunk_size=8192):
+            file.write(chunk)
+    return output_path
 
-# Load Pre-trained Sentence Transformer Model
-model = SentenceTransformer("all-MiniLM-L6-v2")
+# Check if DB file exists, if not, download it
+DB_PATH = "eng_subtitles_database.db"
+if not os.path.exists(DB_PATH):
+    with st.spinner("Downloading database from Google Drive..."):
+        DB_PATH = download_db_from_drive(GDRIVE_FILE_ID)
+        st.success("✅ Database downloaded successfully!")
 
+# Load Subtitle Data
 def load_subtitles(db_path):
     conn = sqlite3.connect(db_path)
     df = pd.read_sql("SELECT num, name, content FROM zipfiles", conn)
     conn.close()
-
-    # Convert binary content to text
     df["decoded_text"] = df["content"].apply(lambda x: x.decode("latin-1") if isinstance(x, bytes) else "")
-
     return df
 
-#  Load Subtitle Embeddings and Create FAISS Index
+df = load_subtitles(DB_PATH)
+
+# Load Sentence Transformer Model
+model = SentenceTransformer("all-MiniLM-L6-v2")
+
+# Create FAISS Index
 def create_faiss_index(df):
-
     embeddings = model.encode(df["decoded_text"].tolist(), show_progress_bar=True)
-    embeddings = np.array(embeddings)
-
-    # Initialize FAISS Index
-    d = embeddings.shape[1]  # Embedding Dimension
-    index = faiss.IndexFlatL2(d)
-    index.add(embeddings)  # Add embeddings to FAISS
-
+    index = faiss.IndexFlatL2(embeddings.shape[1])
+    index.add(np.array(embeddings))
     return index, df
 
-# Transcribe Audio with AssemblyAI
-def transcribe_audio(audio_path):
-    """ Convert speech to text using AssemblyAI """
-    transcriber = aai.Transcriber()
-    transcript = transcriber.transcribe(audio_path)
-    return transcript.text
+index, df = create_faiss_index(df)
 
-# Search Subtitles Using FAISS
-def search_subtitles(query_text, index, df, top_k=5):
-    """ Find the most relevant subtitle segments for the given query """
-    query_embedding = model.encode([query_text])
-    D, I = index.search(query_embedding, top_k)  # FAISS similarity search
-    results = df.iloc[I[0]]
-    return results
-
-# Streamlit
+# Streamlit UI
 st.set_page_config(page_title="Shazam Clone: Audio-to-Subtitle Search", layout="wide")
-
-# Title
 st.title("🎵 Shazam Clone: Audio-to-Subtitle Search")
 st.markdown("Upload an **audio file**, transcribe it to text, and retrieve the most relevant subtitle segments!")
 
-with st.spinner("Loading subtitle database..."):
-    df = load_subtitles(DB_PATH)
-    index, df = create_faiss_index(df)
-
 # 🔹 File Upload Section
-uploaded_file = st.file_uploader("🎤 Upload an audio file", type=["mp3", "wav", "m4a"])
+uploaded_audio = st.file_uploader("🎤 Upload an Audio File", type=["mp3", "wav", "m4a"])
 
-if uploaded_file:
-    st.audio(uploaded_file, format="audio/mp3")
+if uploaded_audio:
+    st.audio(uploaded_audio, format="audio/mp3")
 
-    #  Transcription
     if st.button("🎙 Transcribe Audio"):
-        with st.spinner("Transcribing... This may take a moment..."):
-            query_text = transcribe_audio(uploaded_file)
+        with st.spinner("Transcribing..."):
+            query_text = aai.Transcriber().transcribe(uploaded_audio).text
             st.success("✅ Transcription Complete!")
             st.text_area("🎧 Transcribed Text", query_text, height=150)
 
-            #  Search in FAISS
-            with st.spinner("Searching relevant subtitles..."):
-                results = search_subtitles(query_text, index, df)
+            # Search Subtitles
+            def search_subtitles(query_text, index, df, top_k=5):
+                query_embedding = model.encode([query_text])
+                D, I = index.search(query_embedding, top_k)
+                return df.iloc[I[0]]
 
-                #  Display Search Results
-                st.markdown("## 🔍 **Top Matching Subtitles**")
-                for i, row in results.iterrows():
-                    st.markdown(f"""
-                    **🎬 Movie:** {row["name"]}
-                    - **📜 Subtitle:** `{row["decoded_text"]}`
-                    - 🔗 **[View on OpenSubtitles](https://www.opensubtitles.org/en/subtitles/{row["num"]})**
-                    """)
+            results = search_subtitles(query_text, index, df)
 
-# 🎨 Sidebar Styling
+            # Display Results
+            st.markdown("## 🔍 **Top Matching Subtitles**")
+            for _, row in results.iterrows():
+                st.markdown(f"""
+                **🎬 Movie:** {row["name"]}
+                - **📜 Subtitle:** `{row["decoded_text"]}`
+                - 🔗 **[View on OpenSubtitles](https://www.opensubtitles.org/en/subtitles/{row["num"]})**
+                """)
+
 st.sidebar.header("🔧 Settings")
+st.markdown("---")
+st.markdown("**Developed by [Aashish Niranjan BarathyKannan](https://www.linkedin.com/in/aashishniranjanb/)** | [GitHub](https://github.com/aashishniranjanb)")
 st.sidebar.markdown("""
 - **Powered by:** `FAISS + AssemblyAI + Sentence Transformers`
-- **Database:** `SQLite (.db) file`
+- **Database:** `SQLite (.db) file (from Google Drive)`
 - **Search Mechanism:** `Semantic Search (FAISS)`
 """)
-
 st.sidebar.write("📌 Built with ❤️ using **Streamlit** 🚀")
+
+
